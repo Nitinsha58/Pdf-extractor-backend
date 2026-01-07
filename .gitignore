@@ -1,0 +1,31 @@
+# Python
+*.pyc
+__pycache__/
+*~
+*.log
+*.pot
+.Python
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Django-specific
+db.sqlite3
+local_settings.py
+media/
+static/
+
+# IDE-specific
+.idea/  # For PyCharm
+.vscode/ # For VS Code (consider only ignoring user settings here)
+
+# Operating System
+.DS_Store # macOS
+Thumbs.db # Windows
+
