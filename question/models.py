@@ -179,6 +179,46 @@ class CroppedImage(models.Model):
         )
 
 
+class CroppedImageExtra(models.Model):
+    """Additional images for a single logical question.
+
+    The primary image + metadata remains in CroppedImage to keep existing
+    behavior and APIs intact. Extra images are optional and linked here.
+    """
+
+    parent = models.ForeignKey(
+        CroppedImage,
+        on_delete=models.CASCADE,
+        related_name="extra_images",
+    )
+
+    image = models.ImageField(upload_to="cropped/")
+
+    image_type = models.ForeignKey(
+        ImageType,
+        on_delete=models.PROTECT,
+        related_name="cropped_image_extras",
+        null=True,
+        blank=True,
+    )
+
+    rect_pdf = models.JSONField(default=dict)
+    rect_screen = models.JSONField(default=dict)
+
+    # Order within a question group. Primary CroppedImage is implicitly 1.
+    # Extra images should typically start from 2.
+    sort_order = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Q#{self.parent_id} extra#{self.id}"
+
+    class Meta:
+        ordering = ("sort_order", "id")
+
+
 class QuestionUsage(models.Model):
     question = models.ForeignKey(CroppedImage, on_delete=models.CASCADE, related_name="usage_links")
     usage_type = models.ForeignKey(UsageType, on_delete=models.CASCADE, related_name="question_usage_links")
@@ -193,6 +233,18 @@ class QuestionUsage(models.Model):
 @receiver(post_delete, sender=CroppedImage)
 def delete_cropped_image_file(sender, instance, **kwargs):
     """Delete the underlying file when the CroppedImage row is deleted."""
+    try:
+        file_field = instance.image
+        if file_field and getattr(file_field, "name", None):
+            file_field.delete(save=False)
+    except Exception:
+        # Avoid breaking deletes if file is already gone or storage errors occur
+        pass
+
+
+@receiver(post_delete, sender=CroppedImageExtra)
+def delete_cropped_image_extra_file(sender, instance, **kwargs):
+    """Delete the underlying file when the CroppedImageExtra row is deleted."""
     try:
         file_field = instance.image
         if file_field and getattr(file_field, "name", None):

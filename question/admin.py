@@ -1,9 +1,11 @@
 from django.contrib import admin
+from django.utils.html import format_html
 from .models import (
     Chapter,
     ClassName,
     Concept,
     CroppedImage,
+    CroppedImageExtra,
     ImageType,
     QuestionType,
     QuestionUsage,
@@ -83,6 +85,38 @@ class QuestionUsageInline(admin.TabularInline):
     extra = 0
     autocomplete_fields = ("usage_type",)
 
+
+class CroppedImageExtraInline(admin.TabularInline):
+    model = CroppedImageExtra
+    extra = 0
+    fields = ("sort_order", "image_preview", "image", "image_type", "created_at")
+    readonly_fields = ("image_preview", "created_at")
+    autocomplete_fields = ("image_type",)
+    ordering = ("sort_order", "id")
+
+    def image_preview(self, obj):
+        if not obj or not getattr(obj, "image", None):
+            return ""
+        try:
+            url = obj.image.url
+        except Exception:
+            return ""
+        return format_html(
+            '<a href="{0}" target="_blank"><img src="{0}" style="height:60px; border:1px solid #ddd;" /></a>',
+            url,
+        )
+
+    image_preview.short_description = "Preview"
+
+
+@admin.register(CroppedImageExtra)
+class CroppedImageExtraAdmin(admin.ModelAdmin):
+    list_display = ("id", "parent", "image_type", "created_at")
+    search_fields = ("id", "parent__id")
+    list_filter = ("image_type",)
+    autocomplete_fields = ("parent", "image_type")
+    readonly_fields = ("created_at", "updated_at")
+
 @admin.register(CroppedImage)
 class CroppedImageAdmin(admin.ModelAdmin):
     list_display = (
@@ -132,4 +166,4 @@ class CroppedImageAdmin(admin.ModelAdmin):
         "source",
     )
     readonly_fields = ("created_at", "updated_at")
-    inlines = (QuestionUsageInline,)
+    inlines = (QuestionUsageInline, CroppedImageExtraInline)

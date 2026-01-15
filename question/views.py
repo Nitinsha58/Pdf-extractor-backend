@@ -6,12 +6,14 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
 from django.core.files.storage import default_storage
+from django.db.models import Max
 from django.db import IntegrityError
 from .models import (
     Chapter,
     ClassName,
     Concept,
     CroppedImage,
+    CroppedImageExtra,
     ImageType,
     QuestionType,
     Sources,
@@ -251,7 +253,9 @@ class UploadCropBulk(APIView):
             return obj
 
         created = []
+        created_extras = []
         created_file_names = []
+        primary_by_group_key = {}
 
         try:
             with transaction.atomic():
@@ -260,6 +264,15 @@ class UploadCropBulk(APIView):
                         raise ValidationError({"items": {idx: "Each item must be an object."}})
 
                     payload = dict(item)
+
+                    group_key = (
+                        payload.get("groupKey")
+                        or payload.get("group_key")
+                        or payload.get("questionGroup")
+                        or payload.get("question_group")
+                    )
+                    if group_key is None:
+                        group_key = f"__single__{idx}"
 
                     # Attach file
                     file_key = f"image_{idx}"
@@ -286,6 +299,37 @@ class UploadCropBulk(APIView):
                     payload.pop("documentName", None)
                     payload.pop("page_no", None)
                     payload.pop("document_name", None)
+
+                    group_index_raw = payload.get("groupIndex") or payload.get("group_index")
+                    group_index = _as_int(group_index_raw)
+
+                    # If this group already has a primary CroppedImage, store this as an extra image.
+                    primary = primary_by_group_key.get(str(group_key))
+                    if primary is not None:
+                        # Extra images inherit question metadata from primary.
+                        extra_image_type_obj = None
+                        if payload.get("image_type") not in (None, ""):
+                            extra_image_type_obj = _get_by_id_or_name(ImageType, payload.get("image_type"))
+
+                        # Determine stable order within the group.
+                        # If frontend provides groupIndex (1=primary, 2..n=extras) we store it.
+                        # Otherwise we append after the last known extra.
+                        if group_index is None or group_index < 2:
+                            last = primary.extra_images.aggregate(m=Max("sort_order")).get("m")
+                            group_index = (last or 1) + 1
+
+                        extra = CroppedImageExtra.objects.create(
+                            parent=primary,
+                            image=payload["image"],
+                            image_type=extra_image_type_obj or primary.image_type,
+                            rect_pdf=payload.get("rect_pdf") or {},
+                            rect_screen=payload.get("rect_screen") or {},
+                            sort_order=group_index,
+                        )
+                        created_extras.append(extra)
+                        if getattr(extra.image, "name", None):
+                            created_file_names.append(extra.image.name)
+                        continue
 
                     # Resolve taxonomy
                     class_obj = _get_by_id_or_name(ClassName, payload.get("class_name"))
@@ -351,6 +395,10 @@ class UploadCropBulk(APIView):
 
                     usage_value = payload.pop("usage_type", None)
 
+                    # Not a model field on CroppedImage; used only for grouping.
+                    payload.pop("groupIndex", None)
+                    payload.pop("group_index", None)
+
                     serializer = CropSerializer(data=payload)
                     serializer.is_valid(raise_exception=True)
                     cropped = serializer.save()
@@ -358,11 +406,15 @@ class UploadCropBulk(APIView):
                     if getattr(cropped.image, "name", None):
                         created_file_names.append(cropped.image.name)
 
+                    primary_by_group_key[str(group_key)] = cropped
+
                     if usage_value is not None:
                         usage_obj = _get_by_id_or_name(UsageType, usage_value)
                         if usage_obj is not None:
                             cropped.usage_types.add(usage_obj)
 
+            # Backward-compatible response: still returns created primary crops.
+            # Extras are linked and can be fetched via CroppedImageReadSerializer.
             return Response(CropSerializer(created, many=True).data, status=201)
 
         except ValidationError as e:

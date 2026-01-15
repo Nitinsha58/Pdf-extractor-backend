@@ -4,6 +4,7 @@ from .models import (
     ClassName,
     Concept,
     CroppedImage,
+    CroppedImageExtra,
     ImageType,
     QuestionType,
     Sources,
@@ -165,6 +166,40 @@ class CroppedImageWriteSerializer(serializers.ModelSerializer):
         read_only_fields = ("id",)
 
 
+class CroppedImageExtraReadSerializer(serializers.ModelSerializer):
+    image_type_name = serializers.CharField(source="image_type.name", read_only=True)
+
+    class Meta:
+        model = CroppedImageExtra
+        fields = (
+            "id",
+            "parent",
+            "image",
+            "image_type",
+            "image_type_name",
+            "rect_pdf",
+            "rect_screen",
+            "sort_order",
+            "created_at",
+            "updated_at",
+        )
+
+
+class CroppedImageExtraWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CroppedImageExtra
+        fields = (
+            "id",
+            "parent",
+            "image",
+            "image_type",
+            "rect_pdf",
+            "rect_screen",
+            "sort_order",
+        )
+        read_only_fields = ("id",)
+
+
 class CroppedImageReadSerializer(serializers.ModelSerializer):
     usage_types = UsageTypeSerializer(many=True, read_only=True)
     image_type_name = serializers.CharField(source="image_type.name", read_only=True)
@@ -175,6 +210,7 @@ class CroppedImageReadSerializer(serializers.ModelSerializer):
     chapter_name = serializers.CharField(source="chapter.name", read_only=True)
     concept_name = serializers.CharField(source="concept.name", read_only=True)
     topic_name = serializers.CharField(source="topic.name", read_only=True)
+    extra_images = CroppedImageExtraReadSerializer(many=True, read_only=True)
 
     class Meta:
         model = CroppedImage
@@ -183,6 +219,7 @@ class CroppedImageReadSerializer(serializers.ModelSerializer):
             "image",
             "image_type",
             "image_type_name",
+            "extra_images",
             "rect_pdf",
             "rect_screen",
             "class_name",
